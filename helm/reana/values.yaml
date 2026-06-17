@@ -10,6 +10,30 @@ reana_hostname: localhost
 reana_hostport: 443
 # `reana_hostport` should be set to the port number where the REANA service will be exposed for incoming SSL connections.
 
+# Bundled Keycloak as the OIDC issuer for JWT/BFF authentication (standalone
+# default). Set `enabled: false` to trust an external issuer (topology B) and
+# configure REANA_AUTH_* directly via `components.reana_server.environment`.
+keycloak:
+  enabled: true
+  image: quay.io/keycloak/keycloak:26.0
+  imagePullPolicy: IfNotPresent
+  realm: reana
+  relative_path: /keycloak
+  # Browser-facing base URL; MUST include the relative path. Override per
+  # deployment, e.g. https://reana.example.org/keycloak. The kind dev cluster
+  # exposes REANA on the 30443 nodeport.
+  frontend_url: https://localhost:30443/keycloak
+  audience: reana
+  roles_claim: reana_roles
+  required_role: "reana:user"
+  cli_client_id: reana-cli
+  web_client_id: reana-server
+  # Dev-only defaults; provide real secrets for non-dev deployments and replace
+  # the bundled example realm (which ships a `jane/jane` test user).
+  admin_user: admin
+  admin_password: admin
+  reana_server_client_secret: reana-server-secret
+
 debug:
   enabled: false
 eos:

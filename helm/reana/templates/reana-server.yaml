@@ -176,6 +176,31 @@ spec:
           - name: REANA_HOSTNAME
             value: {{ .Values.reana_hostname | quote }}
           {{- end }}
+          {{- if .Values.keycloak.enabled }}
+          # OIDC/JWT authentication against the bundled Keycloak. The issuer is
+          # the browser-facing frontend URL; discovery is fetched in-cluster via
+          # the Keycloak Service (backchannel), see reana-keycloak.yaml.
+          - name: REANA_AUTH_ISSUER
+            value: "{{ .Values.keycloak.frontend_url }}/realms/{{ .Values.keycloak.realm }}"
+          - name: REANA_AUTH_OPENID_CONFIG_URL
+            value: "http://{{ include "reana.prefix" . }}-keycloak:8080{{ .Values.keycloak.relative_path }}/realms/{{ .Values.keycloak.realm }}/.well-known/openid-configuration"
+          - name: REANA_AUTH_AUDIENCE
+            value: {{ .Values.keycloak.audience | default "reana" | quote }}
+          - name: REANA_AUTH_ROLES_CLAIM
+            value: {{ .Values.keycloak.roles_claim | default "reana_roles" | quote }}
+          - name: REANA_AUTH_REQUIRED_ROLE
+            value: {{ .Values.keycloak.required_role | default "reana:user" | quote }}
+          - name: REANA_AUTH_CLIENT_ID
+            value: {{ .Values.keycloak.cli_client_id | default "reana-cli" | quote }}
+          - name: REANA_AUTH_WEB_CLIENT_ID
+            value: {{ .Values.keycloak.web_client_id | default "reana-server" | quote }}
+          - name: REANA_AUTH_WEB_CLIENT_SECRET
+            value: {{ .Values.keycloak.reana_server_client_secret | quote }}
+          - name: REANA_AUTH_BFF_ENABLED
+            value: "true"
+          - name: REANA_GROUP_BACKENDS
+            value: '[{"type":"keycloak","provider":"keycloak","groups_claim":"groups"}]'
+          {{- end }}
           {{- if .Values.secrets.cern.sso }}
           - name: CERN_CONSUMER_KEY
             valueFrom:
