@@ -53,7 +53,7 @@ spec:
         - containerPort: 5000
           name: http
         {{- if .Values.debug.enabled }}
-        command: ["uvicorn", "reana_server.asgi:app", "--app-dir", "/code/reana-server", "--host", "0.0.0.0", "--port", "5000", "--reload", "--reload-dir", "/code/reana-server", "--reload-exclude", "/code/reana-server/build/*"]
+        command: ["uvicorn", "reana_server.asgi:app", "--app-dir", "/code/reana-server", "--host", "0.0.0.0", "--port", "5000", "--reload", "--reload-dir", "/code/reana-server"]
         tty: true
         stdin: true
         {{- else }}
