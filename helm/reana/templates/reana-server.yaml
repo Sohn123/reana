@@ -53,17 +53,15 @@ spec:
         - containerPort: 5000
           name: http
         {{- if .Values.debug.enabled }}
-        command: ["/bin/sh", "-c"]
-        args: ["invenio run -h 0.0.0.0 -p 5000"]
+        command: ["uvicorn", "reana_server.asgi:app", "--app-dir", "/code/reana-server", "--host", "0.0.0.0", "--port", "5000", "--reload", "--reload-dir", "/code/reana-server", "--reload-exclude", "/code/reana-server/build/*"]
         tty: true
         stdin: true
         {{- else }}
-        # do not use "/bin/sh -c" here as that breaks signal propagation
-        command: ["uwsgi", "--ini", "/var/reana/uwsgi/uwsgi.ini"]
+        command: ["uvicorn", "reana_server.asgi:app", "--host", "0.0.0.0", "--port", "5000", "--workers", "4"]
         {{- end }}
         volumeMounts:
           {{- if .Values.debug.enabled }}
-          - mountPath: /code/
+          - mountPath: /code/reana-server
             name: reana-code
           {{- end }}
           - mountPath: {{ .Values.shared_storage.shared_volume_mount_path }}
@@ -254,6 +252,8 @@ spec:
                 name: {{ include "reana.prefix" . }}-message-broker-secrets
                 key: password
           {{- if .Values.debug.enabled }}
+          - name: PYTHONPATH
+            value: "/code/reana-server:/code/modules/reana-commons:/code/modules/reana-db"
           # Disable CORS in development environment, for example
           # to connect from an external React application.
           - name: INVENIO_CORS_SEND_WILDCARD
@@ -319,7 +319,7 @@ spec:
         command: ["flask", "start-scheduler"]
         volumeMounts:
           {{- if .Values.debug.enabled }}
-          - mountPath: /code/
+          - mountPath: /code/reana-server
             name: reana-code
           {{- end }}
           - mountPath: {{ .Values.shared_storage.shared_volume_mount_path }}
@@ -339,6 +339,8 @@ spec:
           value: {{ $value | quote }}
         {{- end }}
         {{- if .Values.debug.enabled }}
+        - name: PYTHONPATH
+          value: "/code/reana-server:/code/modules/reana-commons:/code/modules/reana-db"
         # Disable CORS in development environment, for example
         # to connect from an external React application.
         - name: INVENIO_CORS_SEND_WILDCARD
