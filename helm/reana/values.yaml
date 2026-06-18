@@ -28,11 +28,34 @@ keycloak:
   required_role: "reana:user"
   cli_client_id: reana-cli
   web_client_id: reana-server
-  # Dev-only defaults; provide real secrets for non-dev deployments and replace
-  # the bundled example realm (which ships a `jane/jane` test user).
+  # Dev-only defaults; replace the bundled example realm (which ships a
+  # `jane/jane` test user) for non-dev deployments.
   admin_user: admin
   admin_password: admin
-  reana_server_client_secret: reana-server-secret
+
+# OIDC/JWT authentication. When `keycloak.enabled` is true, the bundled
+# Keycloak values above provide the issuer and client defaults. When using an
+# external issuer such as CERN, set `keycloak.enabled=false` and configure this
+# block. Secrets live under `secrets.auth`, not in this public config block.
+auth:
+  issuer: ""
+  openidConfigUrl: ""
+  jwksUrl: ""
+  userinfoUrl: ""
+  authorizationUrl: ""
+  tokenUrl: ""
+  endSessionUrl: ""
+  deviceAuthorizationUrl: ""
+  audience: reana
+  rolesClaim: reana_roles
+  roleSources: []
+  requiredRole: "reana:user"
+  clientId: reana-cli
+  webClientId: reana-server
+  bffEnabled: true
+  scopes: "openid profile email"
+  sessionTtl: 604800
+  groupBackends: []
 
 debug:
   enabled: false
@@ -93,16 +116,9 @@ secrets:
   cache: {}
   message_broker: {}
   gitlab: {}
-  cern:
-    sso: {}
-  eosc:
-    sso: {}
   reana: {}
-  login: {}
+  auth: {}
   opensearch: {}
-
-# Enable and configure SSO authentication via a third-party Keycloak identity provider
-login: []
 
 # External database service configuration
 db_env_config:
@@ -155,7 +171,7 @@ components:
       REANA_MAX_CONCURRENT_BATCH_WORKFLOWS: 30
       REANA_SCHEDULER_REQUEUE_SLEEP: 15
       REANA_SCHEDULER_REQUEUE_COUNT: 200
-      REANA_USER_EMAIL_CONFIRMATION: true
+      REANA_USER_EMAIL_CONFIRMATION: false
       REANA_WORKFLOW_SCHEDULING_POLICY: "fifo"
       REANA_WORKFLOW_SCHEDULING_READINESS_CHECK_LEVEL: 9
       REANA_RATELIMIT_GUEST_USER: "40 per second"
@@ -163,6 +179,7 @@ components:
       REANA_RATELIMIT_SLOW: "1/5 second"
       REANA_ACCESS_TOKEN_ISSUANCE_POLICY: "manual"
       REANA_TOKEN_MANAGEMENT_SECRET: ""
+      FETCHER_ALLOWED_PRIVATE_HOSTNAMES: "[]"
     uwsgi:
       processes: 6
       threads: 4
@@ -224,7 +241,7 @@ components:
     image: docker.io/reanahub/reana-message-broker:0.95.0-alpha.3
 
 notifications:
-  enabled: false
+  enabled: true
   email_config:
     smtp_starttls: true
     smtp_ssl: false

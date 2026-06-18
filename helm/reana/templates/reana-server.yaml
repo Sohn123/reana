@@ -31,9 +31,8 @@ spec:
       annotations:
         checksum/database-config: {{ include (print $.Template.BasePath "/database-config.yaml") . | sha256sum }}
         checksum/database-secrets: {{ include (print $.Template.BasePath "/database-secrets.yaml") . | sha256sum }}
-        checksum/sso-secrets: {{ include (print $.Template.BasePath "/sso-secrets.yaml") . | sha256sum }}
-        {{- if .Values.login }}
-        checksum/login-provider-secrets: {{ include (print $.Template.BasePath "/login-provider-secrets.yaml") . | sha256sum }}
+        {{- if or .Values.keycloak.enabled .Values.auth.issuer }}
+        checksum/auth-secrets: {{ include (print $.Template.BasePath "/auth-secrets.yaml") . | sha256sum }}
         {{- end }}
         checksum/gitlab-secrets: {{ include (print $.Template.BasePath "/gitlab-secrets.yaml") . | sha256sum }}
         checksum/app-secrets: {{ include (print $.Template.BasePath "/app-secrets.yaml") . | sha256sum }}
@@ -176,10 +175,11 @@ spec:
           - name: REANA_HOSTNAME
             value: {{ .Values.reana_hostname | quote }}
           {{- end }}
+          {{- if or .Values.keycloak.enabled .Values.auth.issuer }}
           {{- if .Values.keycloak.enabled }}
           # OIDC/JWT authentication against the bundled Keycloak. The issuer is
-          # the browser-facing frontend URL; discovery is fetched in-cluster via
-          # the Keycloak Service (backchannel), see reana-keycloak.yaml.
+          # browser-facing; discovery is fetched in-cluster via the Keycloak
+          # Service (backchannel), see reana-keycloak.yaml.
           - name: REANA_AUTH_ISSUER
             value: "{{ .Values.keycloak.frontend_url }}/realms/{{ .Values.keycloak.realm }}"
           - name: REANA_AUTH_OPENID_CONFIG_URL
@@ -194,45 +194,72 @@ spec:
             value: {{ .Values.keycloak.cli_client_id | default "reana-cli" | quote }}
           - name: REANA_AUTH_WEB_CLIENT_ID
             value: {{ .Values.keycloak.web_client_id | default "reana-server" | quote }}
-          - name: REANA_AUTH_WEB_CLIENT_SECRET
-            value: {{ .Values.keycloak.reana_server_client_secret | quote }}
           - name: REANA_AUTH_BFF_ENABLED
             value: "true"
           - name: REANA_GROUP_BACKENDS
-            value: '[{"type":"keycloak","provider":"keycloak","groups_claim":"groups"}]'
+            value: '[{"type":"keycloak","provider":"keycloak","groups_claim":"groups", "server_url":"http://{{ include "reana.prefix" . }}-keycloak:8080{{ .Values.keycloak.relative_path }}","realm":"{{ .Values.keycloak.realm }}","client_id":"{{ .Values.keycloak.server_client_id | default "reana-server" }}", "client_secret_env":"REANA_AUTH_WEB_CLIENT_SECRET"}]'
+          {{- else }}
+          # OIDC/JWT authentication against an external issuer.
+          - name: REANA_AUTH_ISSUER
+            value: {{ required "auth.issuer must be set when keycloak.enabled=false" .Values.auth.issuer | quote }}
+          {{- if .Values.auth.openidConfigUrl }}
+          - name: REANA_AUTH_OPENID_CONFIG_URL
+            value: {{ .Values.auth.openidConfigUrl | quote }}
           {{- end }}
-          {{- if .Values.secrets.cern.sso }}
-          - name: CERN_CONSUMER_KEY
-            valueFrom:
-              secretKeyRef:
-                name: {{ include "reana.prefix" . }}-cern-sso-secrets
-                key: CERN_CONSUMER_KEY
-          - name: CERN_CONSUMER_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: {{ include "reana.prefix" . }}-cern-sso-secrets
-                key: CERN_CONSUMER_SECRET
+          {{- if .Values.auth.jwksUrl }}
+          - name: REANA_AUTH_JWKS_URL
+            value: {{ .Values.auth.jwksUrl | quote }}
           {{- end }}
-          {{- if .Values.secrets.eosc.sso }}
-          - name: EOSC_CONSUMER_KEY
-            valueFrom:
-              secretKeyRef:
-                name: {{ include "reana.prefix" . }}-eosc-sso-secrets
-                key: EOSC_CONSUMER_KEY
-          - name: EOSC_CONSUMER_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: {{ include "reana.prefix" . }}-eosc-sso-secrets
-                key: EOSC_CONSUMER_SECRET
+          {{- if .Values.auth.userinfoUrl }}
+          - name: REANA_AUTH_USERINFO_URL
+            value: {{ .Values.auth.userinfoUrl | quote }}
           {{- end }}
-          {{- if .Values.login }}
-          - name: LOGIN_PROVIDERS_CONFIGS
-            value: {{ .Values.login | toJson | quote }}
-          - name: LOGIN_PROVIDERS_SECRETS
+          {{- if .Values.auth.authorizationUrl }}
+          - name: REANA_AUTH_AUTHORIZATION_URL
+            value: {{ .Values.auth.authorizationUrl | quote }}
+          {{- end }}
+          {{- if .Values.auth.tokenUrl }}
+          - name: REANA_AUTH_TOKEN_URL
+            value: {{ .Values.auth.tokenUrl | quote }}
+          {{- end }}
+          {{- if .Values.auth.endSessionUrl }}
+          - name: REANA_AUTH_END_SESSION_URL
+            value: {{ .Values.auth.endSessionUrl | quote }}
+          {{- end }}
+          {{- if .Values.auth.deviceAuthorizationUrl }}
+          - name: REANA_AUTH_DEVICE_AUTHORIZATION_URL
+            value: {{ .Values.auth.deviceAuthorizationUrl | quote }}
+          {{- end }}
+          - name: REANA_AUTH_AUDIENCE
+            value: {{ .Values.auth.audience | quote }}
+          - name: REANA_AUTH_ROLES_CLAIM
+            value: {{ .Values.auth.rolesClaim | quote }}
+          - name: REANA_AUTH_REQUIRED_ROLE
+            value: {{ .Values.auth.requiredRole | quote }}
+          - name: REANA_AUTH_CLIENT_ID
+            value: {{ .Values.auth.clientId | quote }}
+          - name: REANA_AUTH_WEB_CLIENT_ID
+            value: {{ .Values.auth.webClientId | quote }}
+          - name: REANA_AUTH_BFF_ENABLED
+            value: {{ .Values.auth.bffEnabled | quote }}
+          - name: REANA_AUTH_SCOPES
+            value: {{ .Values.auth.scopes | quote }}
+          - name: REANA_AUTH_SESSION_TTL
+            value: {{ .Values.auth.sessionTtl | quote }}
+          {{- if .Values.auth.groupBackends }}
+          - name: REANA_GROUP_BACKENDS
+            value: {{ .Values.auth.groupBackends | toJson | quote }}
+          {{- end }}
+          {{- end }}
+          {{- if .Values.auth.roleSources }}
+          - name: REANA_AUTH_ROLE_SOURCES
+            value: {{ .Values.auth.roleSources | toJson | quote }}
+          {{- end }}
+          - name: REANA_AUTH_WEB_CLIENT_SECRET
             valueFrom:
               secretKeyRef:
-                name: {{ include "reana.prefix" $ }}-login-provider-secrets
-                key: PROVIDER_SECRETS
+                name: {{ include "reana.prefix" . }}-auth-secrets
+                key: REANA_AUTH_WEB_CLIENT_SECRET
           {{- end }}
           {{- if .Values.secrets.gitlab }}
           - name: REANA_GITLAB_OAUTH_APP_ID
@@ -394,15 +421,6 @@ spec:
             secretKeyRef:
               name: {{ include "reana.prefix" . }}-db-secrets
               key: password
-        {{- if .Values.login }}
-        - name: LOGIN_PROVIDERS_CONFIGS
-          value: {{ .Values.login | toJson | quote }}
-        - name: LOGIN_PROVIDERS_SECRETS
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "reana.prefix" $ }}-login-provider-secrets
-              key: PROVIDER_SECRETS
-        {{- end }}
         - name: RABBIT_MQ_USER
           valueFrom:
             secretKeyRef:
