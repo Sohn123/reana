@@ -54,6 +54,10 @@ auth:
   webClientId: reana-server
   bffEnabled: true
   scopes: "openid profile email"
+  tokenValidation: jwt
+  introspectionUrl: ""
+  introspectionClientId: ""
+  eoscRequiredEntitlement: ""
   sessionTtl: 604800
   groupBackends: []
 
