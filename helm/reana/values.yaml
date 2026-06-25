@@ -158,6 +158,11 @@ components:
       REANA_OPENSEARCH_ENABLED: false
       REANA_OPENSEARCH_USE_SSL: true
       REANA_OPENSEARCH_CA_CERTS: "/code/certs/ca.crt"
+      # Whether the sandboxed workflow specification validator may reach the
+      # public network (e.g. to resolve a remote yadage `toplevel` or CWL
+      # `$import`). Cluster-internal traffic (to other pods/services) is always
+      # blocked regardless of this setting. Set to "false" for maximum lockdown.
+      REANA_SPEC_VALIDATION_ALLOW_EGRESS: true
     uwsgi:
       processes: 2
       threads: 2
