@@ -51,5 +51,26 @@ def test_cern_profile_renders_without_bundled_keycloak():
     assert "https://auth.cern.ch/auth/realms/cern" in rendered
     assert "REANA_AUTH_ROLE_SOURCES" in rendered
     assert "resource_access.reana-server.roles" in rendered
+    assert "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET" not in rendered
     assert "name: reana-keycloak" not in rendered
     assert "LOGIN_PROVIDERS" not in rendered
+
+
+def test_cern_profile_can_enable_cern_group_backend():
+    rendered = _helm_template(
+        "-f",
+        str(VALUES_DEV),
+        "-f",
+        str(VALUES_CERN),
+        "--set",
+        "auth.cernGroupBackend.enabled=true",
+        "--set",
+        "auth.webClientId=alex-test-groups",
+    )
+
+    assert "REANA_GROUP_BACKENDS" in rendered
+    assert '\\"type\\":\\"cern\\"' in rendered
+    assert '\\"provider\\":\\"cern\\"' in rendered
+    assert '\\"client_id\\":\\"alex-test-groups\\"' in rendered
+    assert '\\"client_secret_env\\":\\"REANA_AUTH_WEB_CLIENT_SECRET\\"' in rendered
+    assert "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET" not in rendered
