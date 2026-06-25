@@ -60,6 +60,20 @@ auth:
   eoscRequiredEntitlement: ""
   sessionTtl: 604800
   groupBackends: []
+  cernGroupBackend:
+    enabled: false
+    provider: cern
+    clientId: ""
+    clientSecretEnv: REANA_GROUP_BACKEND_CERN_CLIENT_SECRET
+    identityClaim: cern_upn
+    identityUserAttr: username
+    apiBaseUrl: ""
+    tokenUrl: ""
+    audience: ""
+    searchFilterTemplate: ""
+    pageSize: ""
+    maxGroups: ""
+    httpTimeout: ""
 
 debug:
   enabled: false

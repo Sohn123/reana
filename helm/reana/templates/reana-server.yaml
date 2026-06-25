@@ -199,6 +199,39 @@ spec:
           - name: REANA_GROUP_BACKENDS
             value: '[{"type":"keycloak","provider":"keycloak","groups_claim":"groups", "server_url":"http://{{ include "reana.prefix" . }}-keycloak:8080{{ .Values.keycloak.relative_path }}","realm":"{{ .Values.keycloak.realm }}","client_id":"{{ .Values.keycloak.server_client_id | default "reana-server" }}", "client_secret_env":"REANA_AUTH_WEB_CLIENT_SECRET"}]'
           {{- else }}
+          {{- $groupBackends := default (list) .Values.auth.groupBackends }}
+          {{- if .Values.auth.cernGroupBackend.enabled }}
+          {{- $cernGroupBackendClientId := .Values.auth.cernGroupBackend.clientId | default .Values.auth.webClientId }}
+          {{- $cernGroupBackend := dict "type" "cern" "provider" (.Values.auth.cernGroupBackend.provider | default "cern") "client_id" (required "auth.cernGroupBackend.clientId or auth.webClientId must be set when auth.cernGroupBackend.enabled=true." $cernGroupBackendClientId) "client_secret_env" (.Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET") }}
+          {{- with .Values.auth.cernGroupBackend.identityClaim }}
+          {{- $_ := set $cernGroupBackend "identity_claim" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.identityUserAttr }}
+          {{- $_ := set $cernGroupBackend "identity_user_attr" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.apiBaseUrl }}
+          {{- $_ := set $cernGroupBackend "api_base_url" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.tokenUrl }}
+          {{- $_ := set $cernGroupBackend "token_url" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.audience }}
+          {{- $_ := set $cernGroupBackend "audience" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.searchFilterTemplate }}
+          {{- $_ := set $cernGroupBackend "search_filter_template" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.pageSize }}
+          {{- $_ := set $cernGroupBackend "page_size" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.maxGroups }}
+          {{- $_ := set $cernGroupBackend "max_groups" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.httpTimeout }}
+          {{- $_ := set $cernGroupBackend "http_timeout" . }}
+          {{- end }}
+          {{- $groupBackends = append $groupBackends $cernGroupBackend }}
+          {{- end }}
           # OIDC/JWT authentication against an external issuer.
           - name: REANA_AUTH_ISSUER
             value: {{ required "auth.issuer must be set when keycloak.enabled=false" .Values.auth.issuer | quote }}
@@ -260,9 +293,9 @@ spec:
           {{- end }}
           - name: REANA_AUTH_SESSION_TTL
             value: {{ .Values.auth.sessionTtl | quote }}
-          {{- if .Values.auth.groupBackends }}
+          {{- if $groupBackends }}
           - name: REANA_GROUP_BACKENDS
-            value: {{ .Values.auth.groupBackends | toJson | quote }}
+            value: {{ $groupBackends | toJson | quote }}
           {{- end }}
           {{- end }}
           {{- if .Values.auth.roleSources }}
@@ -280,6 +313,13 @@ spec:
               secretKeyRef:
                 name: {{ include "reana.prefix" . }}-auth-secrets
                 key: REANA_AUTH_INTROSPECTION_CLIENT_SECRET
+          {{- end }}
+          {{- if and .Values.auth.cernGroupBackend.enabled (ne (.Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET") "REANA_AUTH_WEB_CLIENT_SECRET") }}
+          - name: {{ .Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET" }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "reana.prefix" . }}-auth-secrets
+                key: {{ .Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET" }}
           {{- end }}
           {{- end }}
           {{- if .Values.secrets.gitlab }}

@@ -2,6 +2,7 @@
 #
 # Use together with private values that provide:
 #   secrets.auth.REANA_AUTH_WEB_CLIENT_SECRET
+#   auth.cernGroupBackend.enabled=true if enabling CERN group sync
 # and adjust client ids, audience, and role mappings to the registered CERN
 # Application Portal clients.
 
@@ -30,3 +31,14 @@ auth:
         user: reana:user
         admin: reana:admin
   groupBackends: []
+  cernGroupBackend:
+    enabled: false
+    # Enable this when the configured CERN Application Portal client can use
+    # client credentials to read the Authorization Service API. By default this
+    # reuses `auth.webClientId` and `secrets.auth.REANA_AUTH_WEB_CLIENT_SECRET`.
+    # The server-side backend defaults cover the CERN production API, token
+    # endpoint, audience, and `cern_upn` identity claim; override the fields
+    # below only for non-standard deployments.
+    provider: cern
+    clientId: ""
+    clientSecretEnv: REANA_AUTH_WEB_CLIENT_SECRET
