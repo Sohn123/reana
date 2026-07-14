@@ -338,7 +338,10 @@ def test_bundled_keycloak_realm_tracks_chart_values_and_uses_secrets():
     assert realm["sslRequired"] == "external"
     assert keycloak["spec"]["template"]["spec"]["containers"][0]["args"][0] == ("start")
     assert web_client["clientId"] == "custom-web"
+    assert web_client["serviceAccountsEnabled"] is True
     assert cli_client["clientId"] == "custom-cli"
+    assert "users" not in realm
+    assert "groups" not in realm
     assert web_client["secret"] == "custom-web-secret"
     assert {role["name"] for role in realm["roles"]["realm"]} >= {
         "reana:member",
@@ -383,6 +386,17 @@ def test_bundled_keycloak_realm_tracks_chart_values_and_uses_secrets():
     ]
     assert "create partialImport" in reconcile_script
     assert "ifResourceExists=OVERWRITE" in reconcile_script
+    assert "get group-by-path/local" in reconcile_script
+    assert "get group-by-path/local/atlas" in reconcile_script
+    assert "create groups" in reconcile_script
+    assert '"groups/${local_group_id}/children"' in reconcile_script
+    assert "add-roles" in reconcile_script
+    assert '"service-account-${KEYCLOAK_WEB_CLIENT_ID}"' in reconcile_script
+    assert "serviceAccountsEnabled=false" in reconcile_script
+    assert "serviceAccountsEnabled=true" in reconcile_script
+    for role in ("query-groups", "view-users"):
+        assert f"--rolename {role}" in reconcile_script
+    assert "--rolename view-groups" not in reconcile_script
     assert "get roles/offline_access" in reconcile_script
     assert '"roles/default-roles-${KEYCLOAK_REALM}/composites"' in reconcile_script
     assert "printf '[%s]'" in reconcile_script
@@ -397,6 +411,7 @@ def test_bundled_keycloak_realm_tracks_chart_values_and_uses_secrets():
     }
     assert "--password" not in reconcile_script
     assert "KC_CLI_PASSWORD" in reconciler_environment
+    assert reconciler_environment["KEYCLOAK_WEB_CLIENT_ID"]["value"] == "custom-web"
     assert reconciler_environment["KC_CLI_PASSWORD"]["valueFrom"]["secretKeyRef"] == {
         "name": "reana-keycloak-bootstrap",
         "key": "password",
@@ -1100,6 +1115,8 @@ def test_escape_profile_renders_single_auth_block_without_group_backend():
         "auth.webClientId=seeded-reana-client-id",
         "--set",
         "secrets.auth.REANA_AUTH_WEB_CLIENT_SECRET=seeded-reana-client-secret",
+        "--set",
+        "auth.indigoIamGroupBackend.enabled=false",
     )
 
     assert 'value: "https://iam.local"' in rendered
@@ -1259,3 +1276,52 @@ def test_external_issuer_admin_setup_is_a_successful_noop(tmp_path):
     assert "skipping automatic administrator creation" in result.stdout
     assert "Before the administrator's first REANA login" in result.stdout
     assert "--idp-subject <subject>" in result.stdout
+
+
+def test_cern_profile_can_enable_cern_group_backend():
+    rendered = _helm_template(
+        "-f",
+        str(VALUES_DEV),
+        "-f",
+        str(VALUES_CERN),
+        "--set",
+        "auth.cernGroupBackend.enabled=true",
+        "--set",
+        "auth.webClientId=alex-test-groups",
+        "--set",
+        "auth.audience=reana",
+    )
+
+    assert "REANA_GROUP_BACKENDS" in rendered
+    assert '\\"type\\":\\"cern\\"' in rendered
+    assert '\\"provider\\":\\"cern\\"' in rendered
+    assert '\\"client_id\\":\\"alex-test-groups\\"' in rendered
+    assert '\\"client_secret_env\\":\\"REANA_AUTH_WEB_CLIENT_SECRET\\"' in rendered
+    assert "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET" not in rendered
+
+
+def test_escape_profile_renders_indigo_iam_backend():
+    rendered = _helm_template(
+        "-f",
+        str(VALUES_DEV),
+        "-f",
+        str(VALUES_ESCAPE),
+        "--set",
+        "auth.clientId=seeded-reana-client-id",
+        "--set",
+        "auth.webClientId=seeded-reana-client-id",
+        "--set",
+        "auth.indigoIamGroupBackend.clientId=seeded-scim-client-id",
+        "--set",
+        "secrets.auth.REANA_AUTH_WEB_CLIENT_SECRET=seeded-reana-client-secret",
+        "--set",
+        "secrets.auth.REANA_GROUP_BACKEND_INDIGO_IAM_CLIENT_SECRET=seeded-scim-secret",
+    )
+
+    assert "https://iam.local" in rendered
+    assert "REANA_GROUP_BACKEND_INDIGO_IAM_CLIENT_SECRET" in rendered
+    assert '\\"type\\":\\"indigo_iam\\"' in rendered
+    assert '\\"provider\\":\\"escape\\"' in rendered
+    assert '\\"base_url\\":\\"https://iam.local\\"' in rendered
+    assert '\\"client_id\\":\\"seeded-scim-client-id\\"' in rendered
+    assert "name: reana-keycloak" not in rendered

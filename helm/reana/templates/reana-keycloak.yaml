@@ -342,6 +342,76 @@ spec:
                 -r "${KEYCLOAK_REALM}" \
                 -s ifResourceExists=OVERWRITE \
                 -f /opt/keycloak/data/import/reana-realm.json >/dev/null
+              # Groups are not included in partialImport because Keycloak 26
+              # attempts to create an existing top-level group even with
+              # ifResourceExists=OVERWRITE, violating its sibling_names unique
+              # constraint. Reconcile the bundled development groups explicitly.
+              local_group_id=$(
+                /opt/keycloak/bin/kcadm.sh get group-by-path/local \
+                  --config "${config}" \
+                  -r "${KEYCLOAK_REALM}" \
+                  --fields id \
+                  --format csv \
+                  --noquotes 2>/dev/null || true
+              )
+              if [ -z "${local_group_id}" ]; then
+                /opt/keycloak/bin/kcadm.sh create groups \
+                  --config "${config}" \
+                  -r "${KEYCLOAK_REALM}" \
+                  -s name=local >/dev/null
+                local_group_id=$(
+                  /opt/keycloak/bin/kcadm.sh get group-by-path/local \
+                    --config "${config}" \
+                    -r "${KEYCLOAK_REALM}" \
+                    --fields id \
+                    --format csv \
+                    --noquotes
+                )
+              fi
+              if ! /opt/keycloak/bin/kcadm.sh get group-by-path/local/atlas \
+                --config "${config}" \
+                -r "${KEYCLOAK_REALM}" >/dev/null 2>&1; then
+                /opt/keycloak/bin/kcadm.sh create \
+                  "groups/${local_group_id}/children" \
+                  --config "${config}" \
+                  -r "${KEYCLOAK_REALM}" \
+                  -s name=atlas >/dev/null
+              fi
+              # Keycloak creates the service-account user automatically when
+              # importing the confidential web client. Importing that generated
+              # user explicitly in the same partialImport causes a duplicate
+              # resource failure. A client overwrite can conversely remove the
+              # generated user while leaving serviceAccountsEnabled=true. Toggle
+              # the setting to recreate the user deterministically, then assign
+              # its least-privilege Admin API roles.
+              web_client_uuid=$(
+                /opt/keycloak/bin/kcadm.sh get clients \
+                  --config "${config}" \
+                  -r "${KEYCLOAK_REALM}" \
+                  -q "clientId=${KEYCLOAK_WEB_CLIENT_ID}" \
+                  --fields id \
+                  --format csv \
+                  --noquotes
+              )
+              if [ -z "${web_client_uuid}" ]; then
+                echo "Reconciled Keycloak web client was not found" >&2
+                exit 1
+              fi
+              /opt/keycloak/bin/kcadm.sh update "clients/${web_client_uuid}" \
+                --config "${config}" \
+                -r "${KEYCLOAK_REALM}" \
+                -s serviceAccountsEnabled=false
+              /opt/keycloak/bin/kcadm.sh update "clients/${web_client_uuid}" \
+                --config "${config}" \
+                -r "${KEYCLOAK_REALM}" \
+                -s serviceAccountsEnabled=true
+              /opt/keycloak/bin/kcadm.sh add-roles \
+                --config "${config}" \
+                -r "${KEYCLOAK_REALM}" \
+                --uusername "service-account-${KEYCLOAK_WEB_CLIENT_ID}" \
+                --cclientid realm-management \
+                --rolename query-groups \
+                --rolename view-users
               # Both CLI clients request offline_access so their persisted
               # credentials survive ordinary SSO-session expiry. Keycloak
               # requires the user to hold this realm role in addition to the
@@ -379,6 +449,8 @@ spec:
                   key: password
             - name: KEYCLOAK_REALM
               value: {{ .Values.keycloak.realm | quote }}
+            - name: KEYCLOAK_WEB_CLIENT_ID
+              value: {{ .Values.keycloak.web_client_id | quote }}
           volumeMounts:
             - name: realm
               mountPath: /opt/keycloak/data/import

@@ -43,7 +43,15 @@ auth:
   scopes: "openid profile email offline_access"
   rolesClaim: reana_roles
   requiredRole: "reana:user"
+  groupBackends: []
+  indigoIamGroupBackend:
+    enabled: true
+    provider: escape
+    baseUrl: "https://iam.local"
+    clientId: ""
+    clientSecretEnv: REANA_GROUP_BACKEND_INDIGO_IAM_CLIENT_SECRET
 
 secrets:
   auth:
     REANA_AUTH_WEB_CLIENT_SECRET: ""
+    REANA_GROUP_BACKEND_INDIGO_IAM_CLIENT_SECRET: ""

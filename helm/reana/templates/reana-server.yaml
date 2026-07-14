@@ -275,7 +275,71 @@ spec:
             value: {{ required "keycloak.web_client_id must be set when bundled development Keycloak is enabled" .Values.keycloak.web_client_id | quote }}
           - name: REANA_AUTH_BFF_ENABLED
             value: "true"
+          - name: REANA_GROUP_BACKENDS
+            value: '[{"type":"keycloak","provider":"keycloak","groups_claim":"groups", "server_url":"http://{{ include "reana.prefix" . }}-keycloak:8080{{ .Values.keycloak.relative_path }}","realm":"{{ .Values.keycloak.realm }}","client_id":"{{ .Values.keycloak.server_client_id | default "reana-server" }}", "client_secret_env":"REANA_AUTH_WEB_CLIENT_SECRET"}]'
           {{- else }}
+          {{- $groupBackends := default (list) .Values.auth.groupBackends }}
+          {{- if .Values.auth.cernGroupBackend.enabled }}
+          {{- $cernGroupBackendClientId := .Values.auth.cernGroupBackend.clientId | default .Values.auth.webClientId }}
+          {{- $cernGroupBackend := dict "type" "cern" "provider" (.Values.auth.cernGroupBackend.provider | default "cern") "client_id" (required "auth.cernGroupBackend.clientId or auth.webClientId must be set when auth.cernGroupBackend.enabled=true." $cernGroupBackendClientId) "client_secret_env" (.Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET") }}
+          {{- with .Values.auth.cernGroupBackend.identityClaim }}
+          {{- $_ := set $cernGroupBackend "identity_claim" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.identityUserAttr }}
+          {{- $_ := set $cernGroupBackend "identity_user_attr" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.apiBaseUrl }}
+          {{- $_ := set $cernGroupBackend "api_base_url" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.tokenUrl }}
+          {{- $_ := set $cernGroupBackend "token_url" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.audience }}
+          {{- $_ := set $cernGroupBackend "audience" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.searchFilterTemplate }}
+          {{- $_ := set $cernGroupBackend "search_filter_template" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.pageSize }}
+          {{- $_ := set $cernGroupBackend "page_size" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.maxGroups }}
+          {{- $_ := set $cernGroupBackend "max_groups" . }}
+          {{- end }}
+          {{- with .Values.auth.cernGroupBackend.httpTimeout }}
+          {{- $_ := set $cernGroupBackend "http_timeout" . }}
+          {{- end }}
+          {{- $groupBackends = append $groupBackends $cernGroupBackend }}
+          {{- end }}
+          {{- if .Values.auth.indigoIamGroupBackend.enabled }}
+          {{- $indigoIamGroupBackend := dict "type" "indigo_iam" "provider" (.Values.auth.indigoIamGroupBackend.provider | default "indigo_iam") "client_id" (required "auth.indigoIamGroupBackend.clientId must be set when auth.indigoIamGroupBackend.enabled=true." .Values.auth.indigoIamGroupBackend.clientId) "client_secret_env" (.Values.auth.indigoIamGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_INDIGO_IAM_CLIENT_SECRET") }}
+          {{- if or $.Values.auth.caBundle $.Values.auth.caBundlePath }}
+          {{- $_ := set $indigoIamGroupBackend "ca_bundle" ($.Values.auth.caBundlePath | default $.Values.auth.caBundleMountPath) }}
+          {{- end }}
+          {{- $_ := set $indigoIamGroupBackend "tls_verify" $.Values.auth.tlsVerify }}
+          {{- with .Values.auth.indigoIamGroupBackend.baseUrl }}
+          {{- $_ := set $indigoIamGroupBackend "base_url" . }}
+          {{- end }}
+          {{- with .Values.auth.indigoIamGroupBackend.scimBaseUrl }}
+          {{- $_ := set $indigoIamGroupBackend "scim_base_url" . }}
+          {{- end }}
+          {{- with .Values.auth.indigoIamGroupBackend.tokenUrl }}
+          {{- $_ := set $indigoIamGroupBackend "token_url" . }}
+          {{- end }}
+          {{- with .Values.auth.indigoIamGroupBackend.scope }}
+          {{- $_ := set $indigoIamGroupBackend "scope" . }}
+          {{- end }}
+          {{- with .Values.auth.indigoIamGroupBackend.groupsClaim }}
+          {{- $_ := set $indigoIamGroupBackend "groups_claim" . }}
+          {{- end }}
+          {{- with .Values.auth.indigoIamGroupBackend.pageSize }}
+          {{- $_ := set $indigoIamGroupBackend "page_size" . }}
+          {{- end }}
+          {{- with .Values.auth.indigoIamGroupBackend.httpTimeout }}
+          {{- $_ := set $indigoIamGroupBackend "http_timeout" . }}
+          {{- end }}
+          {{- $groupBackends = append $groupBackends $indigoIamGroupBackend }}
+          {{- end }}
           # OIDC/JWT authentication against an external issuer.
           - name: REANA_AUTH_ISSUER
             value: {{ required "auth.issuer must be set when keycloak.enabled=false" .Values.auth.issuer | quote }}
@@ -333,6 +397,10 @@ spec:
             {{- end }}
           - name: REANA_AUTH_BFF_ENABLED
             value: {{ .Values.auth.bffEnabled | quote }}
+          {{- if $groupBackends }}
+          - name: REANA_GROUP_BACKENDS
+            value: {{ $groupBackends | toJson | quote }}
+          {{- end }}
           {{- end }}
           # Applies regardless of Keycloak mode: both branches above read
           # requests/sessions the same way once issued a token, so these
@@ -347,6 +415,20 @@ spec:
               secretKeyRef:
                 name: {{ include "reana.prefix" . }}-auth-secrets
                 key: REANA_AUTH_WEB_CLIENT_SECRET
+          {{- end }}
+          {{- if and .Values.auth.cernGroupBackend.enabled (ne (.Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET") "REANA_AUTH_WEB_CLIENT_SECRET") }}
+          - name: {{ .Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET" }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "reana.prefix" . }}-auth-secrets
+                key: {{ .Values.auth.cernGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_CERN_CLIENT_SECRET" }}
+          {{- end }}
+          {{- if .Values.auth.indigoIamGroupBackend.enabled }}
+          - name: {{ .Values.auth.indigoIamGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_INDIGO_IAM_CLIENT_SECRET" }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "reana.prefix" . }}-auth-secrets
+                key: {{ .Values.auth.indigoIamGroupBackend.clientSecretEnv | default "REANA_GROUP_BACKEND_INDIGO_IAM_CLIENT_SECRET" }}
           {{- end }}
           {{- end }}
           {{- if .Values.secrets.gitlab }}

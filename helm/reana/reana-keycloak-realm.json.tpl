@@ -22,6 +22,7 @@
       "publicClient": false,
       "secret": {{ .Values.secrets.auth.REANA_AUTH_WEB_CLIENT_SECRET | toJson }},
       "standardFlowEnabled": true,
+      "serviceAccountsEnabled": true,
       "redirectUris": [
         "https://{{ .Values.reana_hostname }}{{ if ne (int .Values.reana_hostport) 443 }}:{{ .Values.reana_hostport }}{{ end }}/api/oauth/callback"
       ],
@@ -40,6 +41,18 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "true",
             "id.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "false"
           }
         },
         {
@@ -103,6 +116,18 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "true",
             "id.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "false"
           }
         },
         {
