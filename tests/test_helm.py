@@ -315,9 +315,10 @@ def test_runtime_namespace_renders_static_cephfs_resources(tmp_path, shared_stor
     runtime_worker_binding = next(
         document
         for document in documents
-        if document["kind"] == "ClusterRoleBinding"
+        if document["kind"] == "RoleBinding"
         and document["metadata"]["name"].endswith("-runtime-worker")
     )
+    assert runtime_worker_binding["metadata"]["namespace"] == "runtime"
     assert {
         "kind": "ServiceAccount",
         "name": runtime_service_account["metadata"]["name"],

@@ -26,6 +26,10 @@ VALUES_CERN = REPO_ROOT / "helm" / "configurations" / "values-cern.yaml"
 VALUES_EOSC = REPO_ROOT / "helm" / "configurations" / "values-eosc.yaml"
 VALUES_ESCAPE = REPO_ROOT / "helm" / "configurations" / "values-escape.yaml"
 CREATE_ADMIN_SCRIPT = REPO_ROOT / "scripts" / "create-admin-user.sh"
+AUTHENTICATED_TEST_SCRIPTS = (
+    REPO_ROOT / "scripts" / "test-spec-validation-storage.sh",
+    REPO_ROOT / "scripts" / "test-spec-validator-network-policy.sh",
+)
 
 
 def _helm_template(*extra_args):
@@ -173,6 +177,30 @@ def test_local_keycloak_auth_uses_secret_backed_reana_auth():
     assert "EOSC_CONSUMER" not in rendered
 
 
+def test_bundled_keycloak_honours_non_default_scopes_and_session_ttl():
+    """auth.scopes/auth.sessionTtl are not external-issuer-only settings.
+
+    Both used to be wired into only the external-issuer branch of the
+    auth env-var block, so a deployer overriding either under bundled
+    Keycloak -- e.g. shortening sessionTtl as a security control -- had
+    it silently ignored; reana-server fell back to its own Python
+    defaults instead.
+    """
+    rendered = _helm_template(
+        "-f",
+        str(VALUES_DEV),
+        "--set",
+        "auth.scopes=openid profile",
+        "--set",
+        "auth.sessionTtl=60",
+    )
+    server = _rendered_resource(rendered, "Deployment", "reana-server")
+    environment = _container_environment(server, "rest-api")
+
+    assert environment["REANA_AUTH_SCOPES"]["value"] == "openid profile"
+    assert environment["REANA_AUTH_SESSION_TTL"]["value"] == "60"
+
+
 def test_bundled_keycloak_http_backchannel_requires_explicit_opt_in():
     """Enabling bundled HTTP without the explicit risk choice fails rendering."""
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
@@ -222,6 +250,8 @@ def test_external_https_backchannel_renders_without_insecure_opt_in():
         "auth.backchannelBaseUrl=https://keycloak.internal/realms/reana",
         "--set",
         "auth.caBundle=/etc/reana/idp-ca.pem",
+        "--set",
+        "auth.audience=test-audience",
     )
     server = _rendered_resource(rendered, "Deployment", "reana-server")
     environment = _container_environment(server, "rest-api")
@@ -233,15 +263,8 @@ def test_external_https_backchannel_renders_without_insecure_opt_in():
     assert environment["REANA_AUTH_CA_BUNDLE"]["value"] == ("/etc/reana/idp-ca.pem")
 
 
-def test_reana_server_readiness_probe_checks_auth_health():
-    """The rest-api container must be taken out of rotation on a real outage.
-
-    /api/ping only reflects process liveness; /api/health additionally
-    reflects Redis/issuer reachability, so the readiness probe must point at
-    the latter, not the former, for Kubernetes to actually detect an auth-
-    subsystem outage instead of routing traffic to a pod that can't serve
-    authenticated requests.
-    """
+def test_reana_server_readiness_probe_checks_process_readiness():
+    """A dependency outage must not withdraw the otherwise usable whole API."""
     rendered = _helm_template("-f", str(VALUES_DEV))
     server = _rendered_resource(rendered, "Deployment", "reana-server")
     container = next(
@@ -251,8 +274,18 @@ def test_reana_server_readiness_probe_checks_auth_health():
     )
 
     probe = container["readinessProbe"]
-    assert probe["httpGet"]["path"] == "/api/health"
+    assert probe["httpGet"]["path"] == "/api/ping"
     assert probe["httpGet"]["port"] == 5000
+
+
+def test_job_controller_http_listener_is_pod_local():
+    """Only the trusted sidecar in the same pod may call job-controller HTTP."""
+    rendered = _helm_template("-f", str(VALUES_DEV))
+    config = _rendered_resource(
+        rendered, "ConfigMap", "uwsgi-config-reana-job-controller"
+    )
+    assert "http = 127.0.0.1:5000" in config["data"]["uwsgi.ini"]
+    assert "http = 0.0.0.0:5000" not in config["data"]["uwsgi.ini"]
 
 
 @pytest.mark.parametrize("hostport", (443, 30443))
@@ -693,6 +726,23 @@ def test_notes_warn_about_unlinked_identities_on_upgrade():
     assert "create-admin-user" in notes
 
 
+def test_notes_warn_that_maintenance_mode_blocks_the_migration_command():
+    """The migration command and maintenance mode must not be ordered wrong.
+
+    `maintenance.enabled: true` scales `<release>-server` itself to zero
+    replicas, so `kubectl exec deployment/<release>-server -- reana-db
+    alembic upgrade` -- the command NOTES.txt tells an operator to run for
+    exactly this maintenance-window scenario -- has no pod to reach if
+    maintenance mode is already on. NOTES.txt must say so explicitly, not
+    just print the two steps in an order that silently doesn't work.
+    """
+    notes = _helm_install_dry_run("-f", str(VALUES_DEV))
+
+    assert "maintenance.enabled" in notes
+    assert "zero replicas" in notes
+    assert "scale deployment/reana-auth-test-server --replicas=1" in notes
+
+
 def test_ephemeral_keycloak_storage_requires_opt_in_and_emits_warning():
     rendered = _helm_template(
         "-f",
@@ -908,7 +958,14 @@ def test_session_headers_middleware_survives_a_null_ingress_annotations_override
 
 
 def test_cern_profile_renders_without_bundled_keycloak():
-    rendered = _helm_template("-f", str(VALUES_DEV), "-f", str(VALUES_CERN))
+    rendered = _helm_template(
+        "-f",
+        str(VALUES_DEV),
+        "-f",
+        str(VALUES_CERN),
+        "--set",
+        "auth.audience=reana",
+    )
 
     assert "https://auth.cern.ch/auth/realms/cern" in rendered
     assert 'value: "reana"' in rendered
@@ -950,6 +1007,8 @@ def test_external_jwt_without_bff_does_not_require_web_client_secret():
         str(VALUES_CERN),
         "--set",
         "auth.bffEnabled=false",
+        "--set",
+        "auth.audience=reana",
     )
 
     assert "https://auth.cern.ch/auth/realms/cern" in rendered
@@ -974,6 +1033,8 @@ def test_external_issuer_rejects_empty_token_contract_values(value, error):
             "-f",
             str(VALUES_CERN),
             "--set",
+            "auth.audience=reana",
+            "--set",
             value,
         )
 
@@ -990,6 +1051,8 @@ def test_external_jwt_only_mode_allows_an_empty_web_client_id():
         "auth.bffEnabled=false",
         "--set",
         "auth.webClientId=",
+        "--set",
+        "auth.audience=reana",
     )
 
     server = _rendered_resource(rendered, "Deployment", "reana-server")
@@ -999,7 +1062,14 @@ def test_external_jwt_only_mode_allows_an_empty_web_client_id():
 
 
 def test_auth_profiles_render_jwt_only_configuration():
-    cern_rendered = _helm_template("-f", str(VALUES_DEV), "-f", str(VALUES_CERN))
+    cern_rendered = _helm_template(
+        "-f",
+        str(VALUES_DEV),
+        "-f",
+        str(VALUES_CERN),
+        "--set",
+        "auth.audience=reana",
+    )
     eosc_rendered = _helm_template(
         "-f",
         str(VALUES_DEV),
@@ -1009,6 +1079,8 @@ def test_auth_profiles_render_jwt_only_configuration():
         "auth.bffEnabled=false",
         "--set",
         "auth.clientId=eosc-cli",
+        "--set",
+        "auth.audience=eosc-cli",
     )
 
     assert "core-proxy.sandbox.eosc-beyond.eu" in eosc_rendered
@@ -1033,6 +1105,19 @@ def test_bundled_keycloak_admin_is_linked_by_stable_subject():
     assert '--rolename "${keycloak_required_role}"' in script
     assert "--rolename reana:user" not in script
     assert '--password "${admin_password}"' not in script
+    assert "admin-access-token" not in script
+
+
+@pytest.mark.parametrize("script_path", AUTHENTICATED_TEST_SCRIPTS)
+def test_operational_scripts_use_only_bearer_authentication(script_path):
+    """Operational probes must follow the OIDC-only server contract."""
+    script = script_path.read_text()
+
+    assert "Authorization: Bearer ${access_token}" in script
+    assert "REANA_ACCESS_TOKEN is required" in script
+    assert "?access_token=" not in script
+    assert "&access_token=" not in script
+    assert "ADMIN_ACCESS_TOKEN" not in script
     assert "admin-access-token" not in script
 
 

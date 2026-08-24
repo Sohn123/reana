@@ -77,6 +77,11 @@ interactive sessions. User-secret configuration cannot override these reserved
 variables. The notebook token is stored in a dedicated Kubernetes Secret and is
 not included in the pod's command-line arguments.
 
+Before upgrading, rename any user secrets that use these reserved names.
+Existing collisions are rejected when an interactive session starts; this
+prevents user-controlled values from replacing the security-sensitive runtime
+configuration.
+
 **Known residual exposure of the session URL.** Opening a session still requires
 putting that same token in the browser's URL bar as a `?token=...` query
 parameter — that's inherent to how Jupyter authenticates a fresh request, not
@@ -128,17 +133,20 @@ accepted policy object alone does not prove isolation; operators should verify
 forbidden egress on their supported cluster configuration.
 
 Run the live enforcement test after deploying REANA. The final argument states
-whether the validator is expected to retain access to the public internet:
+whether the validator is expected to retain access to the public internet. Both
+verification scripts require an OIDC access token:
 
 ```console
-$ scripts/test-spec-validator-network-policy.sh default reana true
+$ REANA_ACCESS_TOKEN="<OIDC-access-token>" \
+    scripts/test-spec-validator-network-policy.sh default reana true
 ```
 
 The validation-snapshot and later input-upload contract can be exercised against
 the same live cluster:
 
 ```console
-$ scripts/test-spec-validation-storage.sh default reana
+$ REANA_ACCESS_TOKEN="<OIDC-access-token>" \
+    scripts/test-spec-validation-storage.sh default reana
 ```
 
 The test triggers specification validation, creates a short-lived pod selected
