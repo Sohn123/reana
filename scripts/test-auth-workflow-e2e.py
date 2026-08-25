@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,8 +25,6 @@ import requests
 import urllib3
 
 ROOT = Path(__file__).resolve().parents[2]
-CLIENT = ROOT / "reana" / ".venv" / "bin" / "reana-client"
-DEMO = ROOT / "reana-demo-helloworld"
 TERMINAL_WORKFLOW_STATES = {"finished", "failed", "stopped", "deleted"}
 
 
@@ -47,6 +46,8 @@ class E2E:
 
     def __init__(self, args):
         self.args = args
+        self.client_path = args.reana_client
+        self.demo_dir = args.demo_dir
         self.server_url = args.server_url.rstrip("/")
         self.keycloak_deployment = f"deployment/{args.release}-keycloak"
         self.server_deployment = f"deployment/{args.release}-server"
@@ -76,8 +77,18 @@ class E2E:
             capture_output=True,
         )
         if check and result.returncode:
+            # A sensitive command's argument vector (e.g. `kcadm
+            # set-password --new-password <secret>`) must stay out of the
+            # failure message too, not just the pre-execution echo above --
+            # a caller passing sensitive=True is asking for the whole
+            # command to be redacted, not merely its happy-path logging.
+            command_description = (
+                "<redacted sensitive command>"
+                if sensitive
+                else " ".join(map(str, command))
+            )
             raise RuntimeError(
-                f"Command failed ({result.returncode}): {' '.join(map(str, command))}\n"
+                f"Command failed ({result.returncode}): {command_description}\n"
                 f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
             )
         return result
@@ -258,7 +269,7 @@ class E2E:
             )
         return response
 
-    def client(self, *args, check=True, cwd=DEMO):
+    def client(self, *args, check=True, cwd=None):
         env = os.environ.copy()
         env.update(
             {
@@ -270,7 +281,12 @@ class E2E:
                 "REANA_INSECURE": "true",
             }
         )
-        return self.run([CLIENT, *args], cwd=cwd, env=env, check=check)
+        return self.run(
+            [self.client_path, *args],
+            cwd=cwd or self.demo_dir,
+            env=env,
+            check=check,
+        )
 
     def operational_script(self, script_name, *args):
         """Run an authenticated operational probe with the current OIDC token."""
@@ -544,7 +560,57 @@ def parse_args():
     parser.add_argument(
         "--keep-users", action="store_true", help="Keep disposable Keycloak users"
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--reana-client",
+        default=None,
+        help=(
+            "Path to the reana-client executable to drive. Defaults to "
+            "whatever `reana-client` resolves to on PATH, so any correctly "
+            "activated virtualenv works -- no fixed checkout layout is "
+            "assumed."
+        ),
+    )
+    parser.add_argument(
+        "--demo-dir",
+        default=None,
+        help=(
+            "Path to a reana-demo-helloworld checkout to run reana-client "
+            "commands from. Defaults to a `reana-demo-helloworld` directory "
+            "next to this script's own repository checkout."
+        ),
+    )
+    args = parser.parse_args()
+
+    if args.reana_client is None:
+        resolved = shutil.which("reana-client")
+        if resolved is None:
+            parser.error(
+                "reana-client is not on PATH and --reana-client was not "
+                "given; activate the virtualenv it's installed in, or pass "
+                "--reana-client explicitly."
+            )
+        args.reana_client = Path(resolved).resolve()
+    else:
+        # Resolved to an absolute path now, while it's still relative to
+        # this process's own cwd: every reana-client subprocess this script
+        # spawns runs with cwd=args.demo_dir instead, so an explicit
+        # relative path (e.g. --reana-client ./bin/reana-client) would
+        # otherwise pass this validation but then resolve against the demo
+        # checkout instead of the directory the script was launched from.
+        args.reana_client = Path(args.reana_client).resolve()
+        if not args.reana_client.is_file():
+            parser.error(f"--reana-client does not exist: {args.reana_client}")
+
+    if args.demo_dir is None:
+        args.demo_dir = ROOT / "reana-demo-helloworld"
+    else:
+        args.demo_dir = Path(args.demo_dir)
+    if not args.demo_dir.is_dir():
+        parser.error(
+            f"--demo-dir does not exist or is not a directory: {args.demo_dir}"
+        )
+
+    return args
 
 
 def main():
