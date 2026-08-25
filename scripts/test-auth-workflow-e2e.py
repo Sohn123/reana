@@ -604,10 +604,15 @@ def parse_args():
     if args.demo_dir is None:
         args.demo_dir = ROOT / "reana-demo-helloworld"
     else:
-        args.demo_dir = Path(args.demo_dir)
+        args.demo_dir = Path(args.demo_dir).resolve()
     if not args.demo_dir.is_dir():
         parser.error(
             f"--demo-dir does not exist or is not a directory: {args.demo_dir}"
+        )
+    if not (args.demo_dir / "reana.yaml").is_file():
+        parser.error(
+            "--demo-dir is not a REANA demo checkout (missing reana.yaml): "
+            f"{args.demo_dir}"
         )
 
     return args

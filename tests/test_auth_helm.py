@@ -735,12 +735,112 @@ def test_notes_warn_that_maintenance_mode_blocks_the_migration_command():
     exactly this maintenance-window scenario -- has no pod to reach if
     maintenance mode is already on. NOTES.txt must say so explicitly, not
     just print the two steps in an order that silently doesn't work.
+
+    The Helm test release name "reana-auth-test" is 15 characters, longer
+    than the 13-character prefix every real Deployment name is actually
+    built from (`reana.prefix`, see _helpers.tpl); every resource name
+    printed here must use that truncated prefix ("reana-auth-te"), not the
+    raw, untruncated release name, or an operator following these exact
+    commands would target a Deployment that does not exist.
     """
     notes = _helm_install_dry_run("-f", str(VALUES_DEV))
 
     assert "maintenance.enabled" in notes
     assert "zero replicas" in notes
-    assert "scale deployment/reana-auth-test-server --replicas=1" in notes
+    assert "patch service/reana-auth-te-server --type=merge" in notes
+    assert '"app":"reana-auth-te-server-maintenance-migration"' in notes
+    assert "scale deployment/reana-auth-te-server --replicas=1" in notes
+    assert "scale deployment/reana-auth-te-server --replicas=0" in notes
+    assert "wait --for=delete pod -l app=reana-auth-te-server --timeout=5m" in notes
+    assert "reana-auth-test-server" not in notes
+    # The bundled database is also scaled to zero by maintenance mode, and
+    # must be scaled back up alongside the server for the migration to have
+    # anything to connect to.
+    assert "scale deployment/reana-auth-te-db --replicas=1" in notes
+    assert "rollout status deployment/reana-auth-te-db --timeout=5m" in notes
+    assert "scale deployment/reana-auth-te-pgbouncer --replicas=1" in notes
+    assert "rollout status deployment/reana-auth-te-pgbouncer --timeout=5m" in notes
+    assert "rollout status deployment/reana-auth-te-server --timeout=5m" in notes
+    database_scale = notes.index("scale deployment/reana-auth-te-db")
+    database_ready = notes.index("rollout status deployment/reana-auth-te-db")
+    pool_scale = notes.index("scale deployment/reana-auth-te-pgbouncer")
+    pool_ready = notes.index("rollout status deployment/reana-auth-te-pgbouncer")
+    server_scale = notes.index("scale deployment/reana-auth-te-server")
+    server_ready = notes.index("rollout status deployment/reana-auth-te-server")
+    migration = notes.index("reana-db alembic upgrade", server_ready)
+    server_stop = notes.index("scale deployment/reana-auth-te-server --replicas=0")
+    pods_stopped = notes.index(
+        "wait --for=delete pod -l app=reana-auth-te-server --timeout=5m"
+    )
+    chart_restore = notes.index("--set maintenance.enabled=true", pods_stopped)
+    service_gate = notes.index("patch service/reana-auth-te-server")
+    assert (
+        service_gate
+        < database_scale
+        < database_ready
+        < pool_scale
+        < pool_ready
+        < server_scale
+        < server_ready
+        < migration
+        < server_stop
+        < pods_stopped
+        < chart_restore
+    )
+
+
+def test_notes_use_fullname_override_for_real_resource_names():
+    """NOTES commands must use the same overridden prefix as chart resources."""
+    notes = _helm_install_dry_run(
+        "-f",
+        str(VALUES_DEV),
+        "--set",
+        "fullnameOverride=custom-override-name",
+    )
+
+    assert "deployment/custom-overri-db" in notes
+    assert "deployment/custom-overri-server" in notes
+    assert "service/custom-overri-server" in notes
+    assert "app=custom-overri-server" in notes
+    assert "deployment/reana-auth-te-server" not in notes
+
+
+def test_notes_external_database_recovery_restores_pool_then_server():
+    """External databases are not scaled, but the chart's pool still is."""
+    notes = _helm_install_dry_run(
+        "-f",
+        str(VALUES_DEV),
+        "--set",
+        "keycloak.enabled=false",
+        "--set",
+        "components.reana_db.enabled=false",
+        "--set",
+        "auth.issuer=https://identity.example.org/realms/reana",
+    )
+
+    assert "scale deployment/reana-auth-te-db" not in notes
+    assert "rollout status deployment/reana-auth-te-db" not in notes
+    assert "scale deployment/reana-auth-te-pgbouncer --replicas=1" in notes
+    assert "rollout status deployment/reana-auth-te-pgbouncer --timeout=5m" in notes
+    assert "scale deployment/reana-auth-te-server --replicas=1" in notes
+    assert "rollout status deployment/reana-auth-te-server --timeout=5m" in notes
+    assert notes.index(
+        "rollout status deployment/reana-auth-te-pgbouncer"
+    ) < notes.index("scale deployment/reana-auth-te-server")
+
+
+def test_notes_without_pgbouncer_do_not_print_pool_commands():
+    """Direct database connections do not require a nonexistent pool Deployment."""
+    notes = _helm_install_dry_run(
+        "-f",
+        str(VALUES_DEV),
+        "--set",
+        "pgbouncer.enabled=false",
+    )
+
+    assert "deployment/reana-auth-te-pgbouncer" not in notes
+    assert "rollout status deployment/reana-auth-te-db --timeout=5m" in notes
+    assert "rollout status deployment/reana-auth-te-server --timeout=5m" in notes
 
 
 def test_ephemeral_keycloak_storage_requires_opt_in_and_emits_warning():

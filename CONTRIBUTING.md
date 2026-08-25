@@ -27,5 +27,16 @@ disposable local cluster with the bundled development Keycloak (see
 It provisions two temporary Keycloak identities, drives a real browser-based BFF
 login, runs the Hello World demo workflow end to end, and checks a few
 auth-hardening properties, before cleaning everything up again -- useful as a
-manual smoke test that unit tests alone cannot cover. It is not part of CI; run
-it locally with `--help` for its options.
+manual smoke test that unit tests alone cannot cover. It is not part of CI.
+Activate the environment containing `reana-client`, clone the Hello World demo
+if it is not already next to this repository, and run for example:
+
+```console
+$ python scripts/test-auth-workflow-e2e.py \
+    --server-url https://localhost:30443 \
+    --reana-client "$(command -v reana-client)" \
+    --demo-dir ../reana-demo-helloworld
+```
+
+Both paths are validated before disposable users are created; run the script
+with `--help` for the namespace, release-prefix, and cleanup options.

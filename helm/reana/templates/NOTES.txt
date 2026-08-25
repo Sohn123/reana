@@ -10,7 +10,7 @@ replaced. Use keycloak.database.mode=bundled or external for persistent data.
 If you are upgrading from a previous REANA release series, you may need to
 upgrade database schema now:
 
-   $ kubectl -n {{ .Release.Namespace }} exec -i -t deployment/{{ .Release.Name }}-server -c rest-api -- reana-db alembic upgrade
+   $ kubectl -n {{ .Release.Namespace }} exec -i -t deployment/{{ include "reana.prefix" . }}-server -c rest-api -- reana-db alembic upgrade
 
 Please see the dedicated upgrade documentation at
 <https://docs.reana.io/administration/deployment/upgrading-db/>
@@ -19,16 +19,43 @@ On an installation with a large number of user accounts, note that some of
 this release's migrations briefly hold an exclusive lock on the `user_`
 table while building new constraints, blocking authenticated requests for
 the build's duration -- see the per-migration notes in reana-db's
-`alembic/versions/` for which ones and why. Consider a maintenance window:
-run the migration above BEFORE setting `maintenance.enabled: true`, since
-that setting scales `{{ .Release.Name }}-server` itself to zero replicas and
-leaves no pod for the `kubectl exec` command above to reach. If you are
-already in maintenance mode, scale the server back up just for this step,
-then re-apply maintenance once the migration has finished:
+`alembic/versions/` for which ones and why. Consider a maintenance window.
+If maintenance mode is already enabled, the server and (when bundled) its
+database are at zero replicas, so the normal `kubectl exec` command has no
+pod or database to reach.
+{{- if .Values.components.reana_db.enabled }} With the bundled database,
+`maintenance.enabled` also scales `{{ include "reana.prefix" . }}-db` to
+zero replicas too, so the migration has no database to reach either.
+{{- end }}{{- if .Values.pgbouncer.enabled }} The configured PgBouncer
+connection pool (`{{ include "reana.prefix" . }}-pgbouncer`) is also scaled
+down and must be restored before the server can reach the database.
+{{- end }} Keep the public API offline while temporarily restoring those
+dependencies by first changing the server Service to a selector that matches
+no pod. Restore the dependencies in readiness order, run the migration, and
+then shut down the temporary server before restoring the chart-managed
+Service selector:
 
-   $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ .Release.Name }}-server --replicas=1
-   $ kubectl -n {{ .Release.Namespace }} exec -i -t deployment/{{ .Release.Name }}-server -c rest-api -- reana-db alembic upgrade
+   $ kubectl -n {{ .Release.Namespace }} patch service/{{ include "reana.prefix" . }}-server --type=merge -p '{"spec":{"selector":{"app":"{{ include "reana.prefix" . }}-server-maintenance-migration"}}}'
+
+{{- if .Values.components.reana_db.enabled }}
+   $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "reana.prefix" . }}-db --replicas=1
+   $ kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "reana.prefix" . }}-db --timeout=5m
+{{- end }}
+{{- if .Values.pgbouncer.enabled }}
+   $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "reana.prefix" . }}-pgbouncer --replicas=1
+   $ kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "reana.prefix" . }}-pgbouncer --timeout=5m
+{{- end }}
+   $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "reana.prefix" . }}-server --replicas=1
+   $ kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "reana.prefix" . }}-server --timeout=5m
+   $ kubectl -n {{ .Release.Namespace }} exec -i -t deployment/{{ include "reana.prefix" . }}-server -c rest-api -- reana-db alembic upgrade
+   $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "reana.prefix" . }}-server --replicas=0
+   $ kubectl -n {{ .Release.Namespace }} wait --for=delete pod -l app={{ include "reana.prefix" . }}-server --timeout=5m
    $ helm upgrade {{ .Release.Name }} reanahub/reana --reuse-values --set maintenance.enabled=true
+
+Run the final three cleanup commands even if the migration fails. This leaves
+the API offline and makes Helm restore the Service's normal selector while
+keeping the server at zero replicas. Diagnose the failed migration before
+leaving maintenance mode.
 
 WARNING: if you are upgrading a REANA cluster with existing users from a
 release series that predates OIDC/JWT authentication, every existing account
@@ -40,7 +67,7 @@ error on their first login rather than being silently locked out, but they
 will still be unable to sign in until an administrator resolves it. Options:
 
   - Link each account by hand:
-      $ kubectl -n {{ .Release.Namespace }} exec deployment/{{ .Release.Name }}-server -c rest-api -- \
+      $ kubectl -n {{ .Release.Namespace }} exec deployment/{{ include "reana.prefix" . }}-server -c rest-api -- \
             flask reana-admin create-admin-user --email jane.doe@example.org \
                                                 --idp-issuer https://issuer.example.org \
                                                 --idp-subject oidc-subject
@@ -69,12 +96,12 @@ finalise its configuration.
 
 1. Initialise the database:
 
-    $ kubectl -n {{ .Release.Namespace }} exec deployment/{{ .Release.Name }}-server -c rest-api -- \
+    $ kubectl -n {{ .Release.Namespace }} exec deployment/{{ include "reana.prefix" . }}-server -c rest-api -- \
         ./scripts/create-database.sh
 
 2. Create an administrator linked to their OIDC identity:
 
-    $ kubectl -n {{ .Release.Namespace }} exec deployment/{{ .Release.Name }}-server -c rest-api -- \
+    $ kubectl -n {{ .Release.Namespace }} exec deployment/{{ include "reana.prefix" . }}-server -c rest-api -- \
           flask reana-admin create-admin-user --email john.doe@example.org \
                                               --idp-issuer https://issuer.example.org \
                                               --idp-subject oidc-subject
