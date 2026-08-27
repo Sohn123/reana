@@ -772,7 +772,13 @@ def test_notes_warn_that_maintenance_mode_blocks_the_migration_command():
     pods_stopped = notes.index(
         "wait --for=delete pod -l app=reana-auth-te-server --timeout=5m"
     )
-    chart_restore = notes.index("--set maintenance.enabled=true", pods_stopped)
+    pool_stop = notes.index(
+        "scale deployment/reana-auth-te-pgbouncer --replicas=0", pods_stopped
+    )
+    database_stop = notes.index(
+        "scale deployment/reana-auth-te-db --replicas=0", pool_stop
+    )
+    selector_restore = notes.index('"app":"reana-auth-te-server"', database_stop)
     service_gate = notes.index("patch service/reana-auth-te-server")
     assert (
         service_gate
@@ -785,8 +791,11 @@ def test_notes_warn_that_maintenance_mode_blocks_the_migration_command():
         < migration
         < server_stop
         < pods_stopped
-        < chart_restore
+        < pool_stop
+        < database_stop
+        < selector_restore
     )
+    assert "helm upgrade" not in notes
 
 
 def test_notes_use_fullname_override_for_real_resource_names():
@@ -827,6 +836,8 @@ def test_notes_external_database_recovery_restores_pool_then_server():
     assert notes.index(
         "rollout status deployment/reana-auth-te-pgbouncer"
     ) < notes.index("scale deployment/reana-auth-te-server")
+    assert "scale deployment/reana-auth-te-pgbouncer --replicas=0" in notes
+    assert '"app":"reana-auth-te-server"' in notes
 
 
 def test_notes_without_pgbouncer_do_not_print_pool_commands():
@@ -841,6 +852,8 @@ def test_notes_without_pgbouncer_do_not_print_pool_commands():
     assert "deployment/reana-auth-te-pgbouncer" not in notes
     assert "rollout status deployment/reana-auth-te-db --timeout=5m" in notes
     assert "rollout status deployment/reana-auth-te-server --timeout=5m" in notes
+    assert "scale deployment/reana-auth-te-db --replicas=0" in notes
+    assert '"app":"reana-auth-te-server"' in notes
 
 
 def test_ephemeral_keycloak_storage_requires_opt_in_and_emits_warning():

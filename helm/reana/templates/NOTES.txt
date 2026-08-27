@@ -50,12 +50,19 @@ Service selector:
    $ kubectl -n {{ .Release.Namespace }} exec -i -t deployment/{{ include "reana.prefix" . }}-server -c rest-api -- reana-db alembic upgrade
    $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "reana.prefix" . }}-server --replicas=0
    $ kubectl -n {{ .Release.Namespace }} wait --for=delete pod -l app={{ include "reana.prefix" . }}-server --timeout=5m
-   $ helm upgrade {{ .Release.Name }} reanahub/reana --reuse-values --set maintenance.enabled=true
+{{- if .Values.pgbouncer.enabled }}
+   $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "reana.prefix" . }}-pgbouncer --replicas=0
+{{- end }}
+{{- if .Values.components.reana_db.enabled }}
+   $ kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "reana.prefix" . }}-db --replicas=0
+{{- end }}
+   $ kubectl -n {{ .Release.Namespace }} patch service/{{ include "reana.prefix" . }}-server --type=merge -p '{"spec":{"selector":{"app":"{{ include "reana.prefix" . }}-server"}}}'
 
-Run the final three cleanup commands even if the migration fails. This leaves
-the API offline and makes Helm restore the Service's normal selector while
-keeping the server at zero replicas. Diagnose the failed migration before
-leaving maintenance mode.
+Run the cleanup commands after the migration even if it fails. This returns
+the chart-managed workloads to zero replicas and restores the Service's normal
+selector without fetching or upgrading a chart. The API remains offline until
+you diagnose any failure and leave maintenance mode through your normal Helm
+upgrade workflow.
 
 WARNING: if you are upgrading a REANA cluster with existing users from a
 release series that predates OIDC/JWT authentication, every existing account
