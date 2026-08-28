@@ -267,7 +267,8 @@ components:
           'self'; frame-ancestors 'none'; object-src 'self'; base-uri 'self';"
   reana_db:
     enabled: true
-    image: docker.io/library/postgres:14.23
+    # Major PostgreSQL upgrades require an explicit data migration.
+    image: docker.io/library/postgres:12.13
     resources: {} # Db pod resources.
     #  limits:
     #    cpu: 1.8

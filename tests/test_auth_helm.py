@@ -116,18 +116,16 @@ def _container_environment(deployment, container_name):
     return {item["name"]: item for item in container["env"]}
 
 
-def test_default_chart_does_not_enable_auth_or_bundled_keycloak():
-    rendered = _helm_template(
-        "-f",
-        str(VALUES_DEV),
-        "--set",
-        "keycloak.enabled=false",
-    )
+def test_chart_rejects_deployment_without_authentication():
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _helm_template(
+            "-f",
+            str(VALUES_DEV),
+            "--set",
+            "keycloak.enabled=false",
+        )
 
-    assert "REANA_AUTH_ISSUER" not in rendered
-    assert "REANA_AUTH_WEB_CLIENT_SECRET" not in rendered
-    assert "name: reana-auth-secrets" not in rendered
-    assert "name: reana-keycloak" not in rendered
+    assert "Authentication is required" in exc_info.value.stderr
 
 
 def test_local_keycloak_auth_uses_secret_backed_reana_auth():

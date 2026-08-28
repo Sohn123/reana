@@ -23,12 +23,16 @@ HELM_TEST_SECRETS = {
     "message_broker": {"user": "test", "password": "test"},
     "reana": {"REANA_SECRET_KEY": "test"},
 }
+HELM_TEST_AUTH = {
+    "issuer": "https://issuer.example.org",
+    "bffEnabled": False,
+}
 
 
 def _render_helm_chart(tmp_path, values=None, namespace="default", check=True):
     """Render the REANA Helm chart with common test secrets."""
     values_file = tmp_path / "values.yaml"
-    chart_values = {"secrets": HELM_TEST_SECRETS}
+    chart_values = {"auth": HELM_TEST_AUTH, "secrets": HELM_TEST_SECRETS}
     chart_values.update(values or {})
     values_file.write_text(yaml.safe_dump(chart_values))
 
@@ -102,8 +106,9 @@ def test_nginx_config_quoted_origins(tmp_path):
     values_file = tmp_path / "values.yaml"
     values_file.write_text(
         yaml.dump(
-            {
-                "components": {
+                {
+                    "auth": HELM_TEST_AUTH,
+                    "components": {
                     "reana_ui": {
                         "nginx": {
                             "security_headers": {
@@ -184,6 +189,7 @@ def test_job_controller_receives_vetted_container_images(
     values_file.write_text(
         yaml.dump(
             {
+                "auth": HELM_TEST_AUTH,
                 "components": {
                     "reana_job_controller": {
                         "environment": job_controller_environment,
@@ -332,6 +338,7 @@ def test_workflow_validator_environment_and_network_policy_rbac(tmp_path):
     values_file.write_text(
         yaml.dump(
             {
+                "auth": HELM_TEST_AUTH,
                 "components": {
                     "reana_workflow_validator": {
                         "environment": {
@@ -620,6 +627,10 @@ def test_workflow_validator_reserved_environment_is_rejected():
             str(HELM_CHART),
             "--set",
             "components.reana_workflow_validator.environment.PYTHONPATH=/tmp/inject",
+            "--set",
+            "auth.issuer=https://issuer.example.org",
+            "--set",
+            "auth.bffEnabled=false",
         ],
         capture_output=True,
         text=True,

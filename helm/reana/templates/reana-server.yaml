@@ -25,6 +25,8 @@
   {{- if and (hasPrefix "http://" .Values.auth.backchannelBaseUrl) (not .Values.auth.backchannelAllowHttp) -}}
     {{- fail "An http:// auth.backchannelBaseUrl requires auth.backchannelAllowHttp=true." -}}
   {{- end -}}
+{{- else -}}
+  {{- fail "Authentication is required: enable bundled Keycloak or set auth.issuer to an external HTTPS OIDC issuer." -}}
 {{- end -}}
 ---
 apiVersion: v1
