@@ -46,11 +46,11 @@ realm base. This exception is not production transport evidence. External and
 production-style deployments use verified HTTPS by default; private issuers can
 provide a CA bundle path with `auth.caBundle`.
 
-The bundled PostgreSQL default is version 14.23. Installations whose persistent
-volume was initialised by PostgreSQL 12 must perform a PostgreSQL major-version
-migration before adopting this image; changing the image tag alone is not a
-database migration. PostgreSQL 14.x installations can take the 14.23 minor
-update without changing the on-disk major format.
+The bundled PostgreSQL default remains version 12.13 so an ordinary chart
+upgrade cannot accidentally attach PostgreSQL 14 to a PostgreSQL 12 data
+directory. Operators may override the image with PostgreSQL 14.23 only after an
+explicit major-version data migration; changing the image tag alone is not a
+database migration.
 
 On every Helm install or upgrade, a bounded post-deployment job reapplies the
 bundled realm roles, protocol mappers, redirect URLs, audience, and client
