@@ -24,6 +24,13 @@ auth:
   openidConfigUrl: ""
   clientId: ""
   webClientId: ""
+  # REQUIRED: leave empty here so the chart's `required` guard forces it to
+  # be supplied explicitly. The base chart default (auth.audience: reana)
+  # is a placeholder, not a value that matches a real EOSC token's `aud`
+  # claim -- inheriting it silently would pass validation and then reject
+  # every real token. Set to the registered client_id(s) for this issuer,
+  # comma-separated if the CLI and web clients are registered separately.
+  audience: ""
   bffEnabled: true
   scopes: "openid profile email"
   rolesClaim: reana_roles

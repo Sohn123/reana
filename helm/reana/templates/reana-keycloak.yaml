@@ -121,6 +121,7 @@ spec:
         app: {{ include "reana.prefix" . }}-keycloak
       annotations:
         checksum/realm: {{ tpl (.Files.Get "reana-keycloak-realm.json.tpl") . | sha256sum }}
+        checksum/bootstrap: {{ .Values.keycloak.admin_password | sha256sum }}
         checksum/database-config: {{ .Values.keycloak.database | toJson | sha256sum }}
         {{- if ne $databaseMode "ephemeral" }}
         checksum/database-secret: {{ include (print $.Template.BasePath "/keycloak-database-secrets.yaml") . | sha256sum }}

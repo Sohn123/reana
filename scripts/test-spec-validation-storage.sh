@@ -10,14 +10,10 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $0 [namespace] [instance-name]
+Usage: $0
 
 Exercise the validation-snapshot and later workspace-input contract against a
 live REANA cluster.
-
-Arguments:
-  namespace      Kubernetes namespace. [default: default]
-  instance-name  REANA Helm release name. [default: reana]
 
 Environment variables:
   REANA_SERVER_URL
@@ -31,7 +27,7 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     usage
     exit 0
 fi
-if [ "$#" -gt 2 ]; then
+if [ "$#" -gt 0 ]; then
     usage >&2
     exit 2
 fi

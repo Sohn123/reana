@@ -273,9 +273,6 @@ class E2E:
         env = os.environ.copy()
         env.update(
             {
-                "PYTHONPATH": os.pathsep.join(
-                    [str(ROOT / "reana-client"), str(ROOT / "reana-commons")]
-                ),
                 "REANA_SERVER_URL": self.server_url,
                 "REANA_ACCESS_TOKEN": self.access_token,
                 "REANA_INSECURE": "true",
@@ -297,7 +294,7 @@ class E2E:
                 "REANA_ACCESS_TOKEN": self.access_token,
             }
         )
-        return self.run([ROOT / "reana" / "scripts" / script_name, *args], env=env)
+        return self.run([Path(__file__).resolve().parent / script_name, *args], env=env)
 
     @staticmethod
     def parse_status(output):
@@ -450,9 +447,7 @@ class E2E:
             raise RuntimeError(f"Incomplete webhook status: {webhook}")
 
         self.log("Checking bearer-only operational validation scripts")
-        self.operational_script(
-            "test-spec-validation-storage.sh", self.args.namespace, self.args.release
-        )
+        self.operational_script("test-spec-validation-storage.sh")
         self.operational_script(
             "test-spec-validator-network-policy.sh",
             self.args.namespace,

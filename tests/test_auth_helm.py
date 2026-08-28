@@ -1097,17 +1097,54 @@ def test_escape_profile_renders_single_auth_block_without_group_backend():
         "--set",
         "auth.webClientId=seeded-reana-client-id",
         "--set",
+        "auth.audience=seeded-reana-client-id",
+        "--set",
         "secrets.auth.REANA_AUTH_WEB_CLIENT_SECRET=seeded-reana-client-secret",
     )
 
     assert 'value: "https://iam.local"' in rendered
-    assert 'value: "reana"' in rendered
     assert "https://iam.local/" not in rendered
     assert "REANA_AUTH_ROLE_SOURCES" not in rendered
     assert "REANA_GROUP_BACKEND" not in rendered
     assert 'value: "seeded-reana-client-id"' in rendered
     assert "REANA_AUTH_WEB_CLIENT_SECRET" in rendered
     assert base64.b64encode(b"seeded-reana-client-secret").decode("ascii") in rendered
+
+
+def test_escape_profile_rejects_the_placeholder_audience_default():
+    """The base chart's auth.audience default must not silently apply."""
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _helm_template(
+            "-f",
+            str(VALUES_DEV),
+            "-f",
+            str(VALUES_ESCAPE),
+            "--set",
+            "auth.clientId=seeded-reana-client-id",
+            "--set",
+            "auth.webClientId=seeded-reana-client-id",
+            "--set",
+            "secrets.auth.REANA_AUTH_WEB_CLIENT_SECRET=seeded-reana-client-secret",
+        )
+
+    assert "auth.audience must be set" in exc_info.value.stderr
+
+
+def test_eosc_profile_rejects_the_placeholder_audience_default():
+    """The base chart's auth.audience default must not silently apply."""
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _helm_template(
+            "-f",
+            str(VALUES_DEV),
+            "-f",
+            str(VALUES_EOSC),
+            "--set",
+            "auth.bffEnabled=false",
+            "--set",
+            "auth.clientId=eosc-cli",
+        )
+
+    assert "auth.audience must be set" in exc_info.value.stderr
 
 
 def test_external_jwt_without_bff_does_not_require_web_client_secret():

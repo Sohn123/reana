@@ -85,6 +85,8 @@ keycloak:
   backchannel_allow_http: false
   audience: reana
   roles_claim: reana_roles
+  # This, not auth.requiredRole, controls the required role when bundled
+  # Keycloak is enabled.
   required_role: "reana:user"
   cli_client_id: reana-cli
   web_client_id: reana-server
@@ -125,9 +127,13 @@ auth:
   deviceAuthorizationUrl: ""
   audience: reana
   rolesClaim: reana_roles
+  # Ignored when keycloak.enabled=true -- use keycloak.required_role instead.
   requiredRole: "reana:user"
   clientId: reana-cli
   webClientId: reana-server
+  # Ignored when keycloak.enabled=true: the bundled Keycloak deployment
+  # always runs with the browser-facing BFF session enabled, with no
+  # override -- there is no keycloak.bffEnabled.
   bffEnabled: true
   scopes: "openid profile email"
   sessionTtl: 604800
